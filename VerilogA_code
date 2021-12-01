@@ -1,0 +1,264 @@
+// Optical Discipline
+// Optical
+nature Efield
+units = "E";
+access = E;
+'ifdef EPHASEABSTOL
+abstol = 'EPHASEABSTOL;
+'else
+abstol = le-6;
+'endif
+endnature
+// Conservative discipline
+discipline optical
+potential Efield;
+enddiscipline
+
+// Laser
+module laser-cw(gnd, out, Htemp, ampin);
+inout gnd;
+input Htemp, ampin; // temp relative to roomtemp
+electrical ampin;
+output [0:1] out;
+thermal Htemp;
+optical gnd;
+optical [0:1] out;
+//Internal nodes
+optical [0:1] outP2C;
+
+//Device parameters 
+parameter real gain=1e10; //gain of. temperature to frequency
+parameter real offsetfreq=0 //offset from center frequency 
+analog begin
+// magnitude
+E(outP2C[1],gnd) <+ V(ampin);
+// phase
+E(outP2C[0],gnd) <+ gain*idt (Temp(Htemp)+offsetfreq*2*'MPI,0)
+end
+pol2cart outconv(outP2C, out, gnd);
+endmodule
+
+
+//Combiner 
+module combiner(in, out,inout optical.gnd;
+input [0:3] in;
+output [0:1] out;
+optical optical-gnd;
+optical [0:3] in;
+optical [0:1] out;
+// Internal nodes
+real outr, outi;     //Output real and imaginary parts
+genvar i;            //Index in for-loop
+analog begin
+outr = 0; // Reset running totals
+outi 0;
+for (i=0; i<3; i=i+2) begin
+// Add ith input pair to running sums
+outr = outr + E(in[i+1],optical-gnd);
+outi = outi + E(in[i],optical.gnd);
+end
+E(out[1],optical-gnd) <+ outr;
+E(out[0],optical-gnd) <+ outi;
+end
+endmodule
+
+
+
+
+// Waveguide
+module waveguide(optgnd, inlig, outlig );
+inout optgnd;
+input [0:1] inlig;
+output [0:1] outlig;
+optical optgnd;
+optical [0:1] outlig, inlig;
+// Device parameters
+parameter real L = 0.0005; // waveguide legnth [m]
+parameter real ng = 4.1963; // group index
+parameter real alphaA = 287.6; // Field loss coefficient [m^-1]
+// Internal nodes
+optical [0:1] outNodly; // cart
+optical [0:1] ringres;
+optical [0:1] ringConv;
+pol2cart convsl(ringres, ringConv, optgnd);
+cartmul muloutl(ringConv, inlig, outNodly);
+analog begin
+//calculate the derivative term:
+E(ringres[0], optgnd) <+ 0.0;
+E (ringres [1] , optgnd) <+ exp (-alphaA*L);
+E(outlig[0], optgnd) <+ absdelay(E(outNodly[0] ,optgnd) ,L*ng/'PC);
+E(outlig[1], optgnd) <+ absdelay(E(outNodly[1],optgnd),L*ng/'PC);
+end
+endmodule
+
+
+
+// Coupler
+module coupler(optgnd, inligi, inlig2, outligi, outlig2);
+input [0:1] inligi, inlig2;
+inout optgnd;
+output [0:1] outligi, outlig2;
+optical optgnd;
+optical [0:1] inligi, outligi, inlig2, outlig2;
+// Device parameters
+parameter real t = 0.5; // Field coupling coefficient
+// Internal nodes
+optical [0:1] Xcoup;
+optical [0:1] Xthru;
+optical [0:1] inligiX;
+optical [0:1] inlig2X;
+optical [0:1] inligiT;
+optical [0:1] inlig2T;
+optical [0:1] Xcoup2;
+analog begin
+E(Xcoup[0], optgnd) <+ 0.0;
+E(Xcoup[1], optgnd) <+ -t;
+E(Xcoup2[0], optgnd) <+ 0.0;
+E(Xcoup2[1], optgnd) <+ -t;
+E(Xthru[0], optgnd) <+ sqrt(1-t*t);
+E(Xthru[1], optgnd) <+ 0;
+end
+cartmul inlX(inligl, Xcoup2, inligiX);
+cartmul in2X(inlig2, Xcoup, inlig2X);
+cartmul inlT(inligl, Xthru, inlig1T);
+cartmul in2T(inlig2, Xthru, inlig2T);
+cartadd combl(inliglT, inlig2X, outligi);
+cartadd comb2(inliglX, inlig2T, outlig2);
+endmodule
+
+//Phase Shifter
+module phaseshifter(vtop, vbot, optgnd, inlig, outlig);
+input vtop, vbot;
+input [0:1] inlig;
+inout optgnd;
+output [0:1] outlig;
+electrical vtop, vbot;
+optical optgnd;
+optical [0:1] outlig,
+branch (vtop,vbot) res,
+// Device
+parameter
+parameter
+parameter
+parameter
+parameter
+parameter
+parameter
+parameters
+real L
+real ng
+real alphaeff
+real nO
+real n1
+real length
+real Is
+500e-6;
+4.2543;
+0;
+0.0;
+0.01;
+10e-6;
+le-14;
+// Derived Parameter Declarations
+real Va;
+real neff;
+real c, v, capacitance;
+real a6, a5, a4, a3, a2, al, aO;
+//
+//-
+//-
+//I
+//I
+//,
+//
+Ring length [m]
+Group index
+Field loss coeffcient [m^-1]
+Index fitting number
+Index fitting number
+Length of diode [m]
+Rev-bias saturation current [A]
+// Coefficients for polynomial
+// Internal nodes
+optical [0:1] TshifterP;
+optical [0:1] TshifterC;
+optical [0:1] outNodly;
+pol2cart convsl(TshifterP, TshifterC, optgnd);
+cartmul multoutl(TshifterC, inlig, outNodly);
+analog begin
+// initialize constants
+a6 = 0.0005e-15;
+a5 = 0.0070e-15;
+a4 = 0.0384e-15;
+a3 = 0.0921e-15;
+a2 = 0.0983e-15;
+at = 0.1131e-15;
+aO = 0.3628e-15;
+// Calculate junction capacitance
+// if V(p,n) is outside the range of data then capacitance clips
+v=V(cap);
+if (v>0)
+c = aO;
+else if (v<-4)
+c = a6*pow(-4,6)+a5*pow(-4,5)+a4*pow(-4,4)+a3*pow(-4,3)+
+a2*pow(-4,2)+al*-4+aO;
+else
+c = a6*pow(v,6)+a5*pow(v,5)+a4*pow(v,4)+a3*pow(v,3)+
+a2*pow(v,2)+al*v+aO;
+// c is capacitance per [um] of length
+// convert length from [m] to [um] and find total capacitance
+capacitance = length*1e6*c;
+// Diode equations
+I(cap) <+ ddt(capacitance*V(cap));
+I(res) <+ Is*(limexp(V(res)/($vt))-1);
+// Calculate optical outputs
+neff = nO+nl*V(vtop,vbot);
+E(TshifterP[0], optgnd) <+ ((neff*L*2*'MPI)*
+('GFREQ)/'PC)%(2*'MPI);
+E(TshifterP[1], optgnd) <+ exp(-alphaeff*L);
+E(outlig[0], optgnd)<+absdelay(E(outNodly[0],optgnd),L*ng/'PC);
+E(outlig[1], optgnd)<+absdelay(E(outNodly[1],optgnd),L*ng/'PC);
+end
+endmodule
+
+// Photodetector
+module photodetector(optgnd, vtop, vbot, inlig);
+input [0:1] inlig;
+inout optgnd;
+inout vtop, vbot;
+electrical vtop, vbot;
+optical [0:1] inlig;
+optical optgnd;
+branch (vtop, vbot) res, cap, photo;
+// Device parameters
+parameter real Rspvty = 1.0; // Photodiode responsivity
+parameter real Rdark = 1e6;  // Dark current equiv resistance [Ohm]
+parameter real Wi = 700e-9;
+parameter real len = 10e-6;
+parameter real wid = le-6;
+parameter real Is = le-14;
+parameter real Rs = 1e3;
+
+
+// Width of intrinsic region [m]
+// Length of photodiode [m]
+// Width of photodiode Em]
+// Rev-bias saturation current [A]
+// Series resistance [Ohm]
+// Derived Parameter Declarations
+real Optmag. // Dielectric constant of germanium
+real eGe;    // Junction capacitance
+analog begin
+eGe = 16*'PEPSO;
+Cj = eGe*len*wid/Wi; // model as parallel plate for now
+// Diode equations
+I(cap) <+ ddt(Cj * V(cap));
+I(res) <+ Is*(limexp(V(res)/($vt))-1);
+// Calculate photocurrent
+Optmag = E(inlig[1], optgnd)*E(inlig[1], optgnd)+
+E(inlig[O], optgnd)*E(inlig[O], optgnd);
+I(photo) <+ Rspvty*Optmag+V(photo)/Rdark;
+end
+endmodule
+
+real Cj;
